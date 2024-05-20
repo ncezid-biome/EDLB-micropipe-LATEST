@@ -4,13 +4,11 @@
 Nextflow workflow for ONT basecalling using Dorado basecaller
 */
 
-/*
-PROCESSES
-*/
+
 process BASECALL_DORADO {
 	tag "Dorado on ${sample_id}"
 	errorStrategy = 'ignore'
-	
+	publishDir "$params.outdir/",  mode: 'copy', pattern: '*.bam'
 	input:
 	tuple val(sample_id), path(reads)
 	
@@ -20,7 +18,7 @@ process BASECALL_DORADO {
 	script:
 	"""
 	${params.dorado_gpu_folder}/dorado download --model ${params.dorado_model}
-	${params.dorado_gpu_folder}/dorado basecaller -b ${params.batchsize} -r -x ${params.dorado_device} ${params.dorado_basecaller} ${reads}  > ${sample_id}.bam
+	${params.dorado_gpu_folder}/dorado basecaller -b ${params.dorado_batchsize} -r -x ${params.dorado_device} ${params.dorado_basecaller} ${reads}  > ${params.outdir}/${sample_id}.bam
 	"""
 }
 
@@ -58,7 +56,6 @@ workflow {
 	Channel //set channel for POD5s
 		.of(all_subdirs)
 		.map{ file -> tuple(file.SimpleName, file) }
-		//.view()
 		.set{pod5_ch}
 
 	bam_ch = BASECALL_DORADO(pod5_ch)

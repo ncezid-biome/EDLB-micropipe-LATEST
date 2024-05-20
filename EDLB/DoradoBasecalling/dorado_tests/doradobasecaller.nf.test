@@ -1,0 +1,23 @@
+nextflow_pipeline {
+
+    name "Test Dorado Basecaller Workflow"
+    script "doradobasecaller.nf"
+
+    test("Dorado Basecalling Workflow") {
+
+        when {
+            params {
+                // define parameters here.
+		pod5_dir='/scicomp/groups/OID/NCEZID/DFWED/EDLB/projects/the-chunnel/mariana_pod5s/pod5_pass/' 
+                outdir = "${PWD}/dorado_basecaller_test_results"
+		
+            }
+        }
+
+        then {
+            assert workflow.success
+        }
+
+    }
+
+}

@@ -33,19 +33,19 @@ Please note that this pipeline does not perform extensive quality assessment of 
 
 # Quickstart
 
-1. Basecalling, demultiplexing and assembly workflow
+1. Basecalling, demultiplexing and assembly workflow (for non-demultiplexed fast5 inputs with Guppy as basecaller)
 
 `nextflow main.nf --basecalling --demultiplexing --samplesheet /path/to/samples.csv --fast5 /path/to/fast5/directory/ --datadir /path/to/datadir/ --outdir /path/to/outdir/`
 
-2. Demultiplexing and assembly workflow (basecalling already complete)
+2. Demultiplexing and assembly workflow (basecalling of non-demultiplexed fast5s already complete; uses Guppy as demultiplexer)
 
 `nextflow main.nf --demultiplexing --samplesheet /path/to/samples.csv --fastq /path/to/fastq/directory/ --datadir /path/to/datadir/ --outdir /path/to/outdir/`
 
-3. Assembly only workflow (basecalling and demultiplexing already complete)
+3. Assembly only workflow (basecalling and demultiplexing already complete. Demultiplexed Fastq inputs.)
 
 `nextflow main.nf --samplesheet /path/to/samples.csv --fastq /path/to/fastq/directory/ --datadir /path/to/datadir/ --outdir /path/to/outdir/`
 
-4. Basecalling and assembly workflow (multiple samples)
+4. Basecalling and assembly workflow (multiple samples that were demultiplexed but NOT basecalled. Uses Guppy.)
 
 `nextflow main.nf --basecalling --samplesheet /path/to/samplesheet --fast5 /path/to/demultiplexed/fast5s --outdir /path/to/outdir/`
 
@@ -53,7 +53,7 @@ Please note that this pipeline does not perform extensive quality assessment of 
 
 microPIPE has been built using Nextflow and Singularity to enable ease of use and installation across different platforms. 
 
-NOTE: Make sure that you change the required paths to your paths. A quick way is to use :%s/patternToReplace/OldPattern/g on vim editor and then save with :wq.
+NOTE: Make sure that you change the required paths to your paths. A quick way is to use `:%s/patternToReplace/OldPattern/g` on vim editor and then save with Esc`:wq`.
 
 **0. Requirements**
 
@@ -65,14 +65,9 @@ which dorado
 Make sure to specify the paths to the installations (obtained using "which dorado". On the EDLB/DoradoBasecalling folder, go to the doradobasecaller.config file and change the paths to match your dorado installation and the appropriate models for your kit and flowcell.
 ```
 dorado_gpu_folder = "/apps/x86_64/dorado/x.x.x/bin/"
-guppy_gpu_folder = "/apps/x86_64/guppy/x.x.x-gpu/bin/"
-dorado_model = 'dna_r10.4.1_e8.2_400bps_sup@v4.2.0'
-dorado_basecaller = 'dna_r10.4.1_e8.2_400bps_sup@v4.2.0'
-dorado_modified_bases = '5mC 6mA'
-dorado_device = 'cuda:0'
 ```
 If you get an out of memory error, you should adjust the batchsize for dorado basecaller to half of the maximum identified in the error message (e.g.if the error message says 64 is the maximum do 32).
-`batchsize=32`
+`dorado_batchsize=32`
 
 * [Nextflow](https://www.nextflow.io/) >= 20.10.0
 
@@ -86,7 +81,7 @@ It will create the nextflow main executable file in the current directory. Optio
 
 * [Singularity](https://singularity.lbl.gov/install-linux) >= 2.3 (microPIPE has been tested with version 3.4.1, 3.5.0 and 3.6.3)
 
-* Guppy (6.3.8 is the latest working version)
+* Guppy (6.4.6 is the latest working version)
  
 Due to the Oxford Nanopore Technologies terms and conditions, we are not allowed to redistribute the Guppy software either in its binary form or packaged form e.g. Docker or Singularity images. Therefore users will have to either install Guppy, provide a container image or start the pipeline from the basecalled fastq files.  See [Usage](#usage) section below for instructions. 
 
@@ -102,19 +97,42 @@ params {
         guppy_basecaller_args = "--recursive -q 0 --disable_qscore_filtering"
 }
 ```
-* Nf-test
 
-For unit module testing, nf-test needs to be installed. Instructions to install nf-test are located here: https://code.askimed.com/nf-test/getting-started/
-It's recommended that nf-test be installed on a folder called ~/bin. Create that folder if non-existent.  I included an example .bashrc file you can use the source command to add the ~/bin folder to the path. And an example script to test the pipeline in run_test.sh.
+**1. Installing microPIPE**
+
+Download the microPIPE repository using the command:
+``` 
+git clone https://github.com/vasquini/EDLB-micropipe.git
+```
+microPIPE only requires the `main.nf` and `nexflow.config` files to run. You will also need to provide a samplesheet (explained below). 
+
+**2. Unit testing with Nf-test**
+
+For unit module testing, nf-test needs to be installed. Instructions to install nf-test are located [here](https://code.askimed.com/nf-test/getting-started/)
+
+* Nf-test requirements to run properly
+  * Make sure you have loaded the latest version of java:
+   `ml java/latest`
+  * Load nextflow:
+    `ml nextflow`
+  * Test the installation:
+    `nf-test version`
+    
+**If there is a java version error contact scicomp for administrator permissions and help.**
+
+It's recommended that nf-test be installed on a folder called ~/bin. Create that folder if non-existent.  
 ```
 mkdir ~/bin
 cd ~/EDLB
-source ~./bashrc
+# Add ~/bin to path
+export PATH="$HOME/bin:$PATH"
+
 ```
 * Bash script example
 This is an example of the bash script I use to submit the test to the pipeline:
 ```
 #!/usr/bin/bash -l
+source /etc/profile
 # Assign Job-Name instead of defauly which is the name of job-script
 #$ -N Nf-test
 # Start the script in the current working directory
@@ -126,27 +144,65 @@ This is an example of the bash script I use to submit the test to the pipeline:
 #$ -e nftest.err
 
 echo "-------------------------------------------------------------------------"
-module load guppy
+module unload
+ml java/latest
+which java
+ml nextflow
+which nextflow
+which nf-test
+nf-test version # Checks to see if installation works.
+ml guppy
 which guppy_basecaller
-source ~/.bashrc
+which guppy_barcoder
 which nf-test
 echo "-------------------------------------------------------------------------"
+# Go to dir where tests folder located 
 cd ~/EDLB/
 nf-test test
-# You may add the micropipe commands here:
-# nextflow EDLB/main.nf --basecalling --demultiplexing --samplesheet path/to/samplesheet --outdir /path/to/output --skip_illumina --fast5 /path/to/fast5/ --guppy_barcode_kits "EXP-NBD114" --flye_args "--asm-coverage 100"
+# You may add the micropipe commands here. For example:
+# nextflow EDLB/main.nf --basecalling --demultiplexing --samplesheet path/to/samplesheet --outdir /path/to/output --skip_illumina --fast5 /path/to/fast5/ --guppy_barcode_kits "EXP-NBD114" --flye_args "--asm-coverage 50"
 ```
-**1. Installing microPIPE**
+I also have an example of a script without tests for running the pipeline in the script **run_v6.sh**. 
 
-Download the microPIPE repository using the command:
-``` 
-git clone https://github.com/BeatsonLab-MicrobialGenomics/micropipe.git
-```
-microPIPE only requires the `main.nf` and `nexflow.config` files to run. You will also need to provide a samplesheet (explained below). 
+**WARNING: Some HPC clusters like Rosalind can't run GPU processes on GPU nodes. Dorado and Guppy need GPU nodes to run. In such cases, it is recommended to separate GPU processes (Dorado or Guppy processes) from the rest of the pipeline, and run the rest of the pipeline as an Assembly-only run in non-GPU node.**
+
+* **Nf-test Test Data**
+
+This can be found under the **test_data** folder. 
+
+Folder structure:
+
+* **fast5_tiny**: folder with non-demultiplexed fast5 small file (Guppy processes and tests that involve these)
+* GXB01322_20181217_FAK35493_GA10000_filtered.fastq.gz: Filtered fastq file to test a simple Assembly-only pipeline test.
+* **test samplesheets**:
+  * test_samplesheet.csv: Samplesheet for testing the whole pipeline (Guppy as basecaller and demultiplexer). 
+  * assembly_test_samplesheet.csv: Samplesheet for testing Assembly-only pipeline (Simplest test that doesn't depend on GPUs).
+  * test_demultiplexed_samplesheet.csv: Samplesheet for testing Demultiplexing and Assembly pipeline.
+  * medaka_test_samplesheet.csv: Samplesheet for the single process Medaka test.
+  * racon_test_samplesheet.csv: Samplesheet for the single process Racon test.
+  * r10_samplesheet.csv: Samplesheet example for R10.4.1 data of 6 samples.
+
 
 # Usage
 
-**1. Prepare the Nextflow configuration file**
+**1. Prepare the Dorado Basecaller configuration file**
+
+If you have POD5 files as input, you'll have to use Dorado basecaller. You may skip this step if you plan to only use Guppy. Make sure to specify the paths to the installations (obtained using "which dorado". On the **EDLB/DoradoBasecalling** folder, go to the **doradobasecaller.config** file and change the paths to match your dorado installation and the appropriate models for your kit and flowcell. You can determine the installation/module paths using `which dorado`.
+
+Also make sure that you specify the correct dorado model to basecall with, the modified bases, and **which GPUs** to use for your specific system. In the following example, the GPUs are specified in the **dorado_device** parameter as 'cuda:0'.
+
+The parameter **dorado_modified_bases** refers to epigenetic modifications. There are different kinds of these that may be basecalled with Dorado.
+The parameter **dorado_gpu_folder** refers to the path for the installation of Dorado. In this case it's a module that's loaded.
+For more in-depth usage information on Dorado read [here](https://github.com/nanoporetech/dorado/).
+
+```
+dorado_gpu_folder = "/apps/x86_64/dorado/x.x.x/bin/"
+dorado_model = 'dna_r10.4.1_e8.2_400bps_sup@v4.2.0'
+dorado_modified_bases = '5mC 6mA'
+dorado_device = 'cuda:0'
+```
+
+**2. Prepare microPIPE's Nextflow configuration file**
 
 When a Nexflow pipeline script is launched, Nextflow looks for a file named **nextflow.config** in the current directory. The configuration file defines default parameters values for the pipeline and cluster settings such as the executor (e.g. "slurm", "local") and queues to be used (https://www.nextflow.io/docs/latest/config.html). 
 
@@ -159,7 +215,7 @@ singularity {
 }
 ```
 
-The **nextflow.config** file should be modified to specify the location of Guppy using one of the following options:
+The **nextflow.config** file should be modified to specify the location of Guppy (If you're using Guppy) using one of the following options:
 
 * Download and unpack the Guppy .tar.gz archive file. Provide the path to the Guppy binary folder in the params section and comment the following lines in the process section: 
    ```
@@ -199,8 +255,7 @@ Two versions of the configuration file are available and correspond to microPIPE
 
 **NOTE:** to use **GPU** resources for basecalling and demultiplexing, use the `--gpu` flag.
 
-
-**2. Prepare the samplesheet file (csv)**
+**3. Prepare the samplesheet file (csv)**
 
 The samplesheet file (comma-separated values) defines the input fastq files (Illumina [short] and Nanopore [long], and their directory path), barcode number, sample ID, and the estimated genome size (for Flye assembly). The header line should match the header line in the examples below:
 
@@ -235,7 +290,7 @@ barcode01,S24,barcode01.fastq.gz,5.5m
 barcode02,S34,barcode02.fastq.gz,5.5m
 ```
 
-**3. Run the pipeline**
+**4. Run the pipeline**
 
 The pipeline can be used to run:
 * **Processing POD5 files (R.10.4.1+ flowcells)**
@@ -333,20 +388,23 @@ barcode02,S34,barcode02.fastq.gz,S34EC.filtered_1P.fastq.gz,S34EC.filtered_2P.fa
 
 # Example data
 
-To test the pipeline, we have provided some [test data](https://github.com/BeatsonLab-MicrobialGenomics/micropipe/tree/main/test_data). In this directory you will find:
+To test the pipeline, we have provided some [test data](https://github.com/vasquini/EDLB-micropipe/tree/main/EDLB/test_data). In this directory you will find:
 
 File | Description
 ---|---
-S24EC_1P_test.fastq.gz | Illumina reads 1st pair
-S24EC_2P_test.fastq.gz | Illumina reads 2nd pair
-barcode01.fastq.gz | ONT fastq reads 
-samples_1.csv | sample sheet for running assembly-only pipeline
-samples_1_basecalling.csv | sample sheet for full pipeline
-samples_1_basecalling_single_isolate.csv | sample sheet for a single isolate
+fast5_tiny | Directory of Fast5 files (just one) to test that basecalling processes work 
+test_samplesheet.csv | Example samplesheet #1 (single-sample) running from basecalling to the end of pipeline.
+r10_samplesheet.csv | Example samplesheet #2 (multiple samples) running from basecalling to the end of pipeline. 
+assembly_test_samplesheet.csv | sample sheet for running assembly-only pipeline
+test_demultiplexed_samplesheet.csv | Samplesheet for data that has already been demultiplexed.
+racon_test_samplesheet.csv | Samplesheet for the process test for Racon
+medaka_test_samplesheet.csv | Samplesheet for the process test for Medaka
+GXB01322_20181217_FAK35493_GA10000_filtered.fastq.gz | Basecalled, demultiplexed, and filtered fastq to test the assembly-only pipeline
 
-To test the assembly-only pipeline, edit the `sample_1.csv` samplesheet to point to the correct test files. Then run:
+To test the assembly-only pipeline, edit the `assembly_test_samplesheet.csv` samplesheet to point to the correct test files. Then run:
 
-`nextflow main.nf --samplesheet /path/to/samples_1.csv --outdir /path/to/test_outdir/`
+`nextflow main.nf --samplesheet /path/to/assembly_test_samplesheet.csv --outdir /path/to/test_outdir/`
+
 
 
 # Optional parameters
@@ -362,7 +420,11 @@ Basecalling
 *	`--flowcell`:	Name of the ONT flow cell used for sequencing (default=false). Ignored if '--guppy_config_gpu' or '--guppy_congif_cpu' is specified
 *	`--kit`: Name of the ONT kit used for sequencing (default=false). Ignored if '--guppy_config_gpu' or '--guppy_congif_cpu' is specified
 *	`--single_sample`: Boolean value to denote whether demultiplexed fast5 files are single isolate or multiple samples (default=false)
-
+* `--pod5_dir`: Location of POD5 file directory and tells microPIPE to use Dorado basecaller instead of Guppy.
+* `--dorado_batchsize`: Specify the batchsize for Dorado basecaller. Helps avoid OOM errors.
+* `--dorado_gpu_folder`:
+* `--dorado_modified_bases`: Allow Dorado to look at epigenetic modifications (And specify which kind of modifications e.g. '5mC 6mA')
+* `--dorado_device`: Specify the specific GPUs of your system you want Dorado to run in. Dorado will automatically run in multi-GPU cuda:all mode. If you have a hetrogenous collection of GPUs, select the faster GPUs using the --device flag (e.g --device cuda:0,2). Not doing this will have a detrimental impact on performance.
 Quality control:
 * `--skip_pycoqc`: skip the pycoQC step to generate a quality control html report, when --basecalling (default=false)
 * `--skip_qc`: skip the Fastqc and Multiqc steps to generate a quality control html report
@@ -411,6 +473,11 @@ Assembly evaluation:
 
 # Structure of the output folders
 
+Structure after running Dorado basecaller:
+* **dorado_basecalling/** Uses the name that was specified as the output directory (default name is **dorado_basecalling** can be editted in doradobasecaller.config). It cointains folders with the names of your samples. The POD5 files given were already demultiplexed before being basecalled.
+Each sample folder (E.g. SAL2014K):
+  * contains the Fastq files belonging to the sample.
+
 The pipeline will create several folders corresponding to the different steps of the pipeline. 
 The main output folder (`--outdir`) will contain the following folders:
 * **0_basecalling:** Fastq files containing the basecalled reads, Guppy sequencing_summary.txt file
@@ -426,6 +493,15 @@ Each sample folder will contain the following folders:
 * **4_polishing_short_reads:** Final polished assembly fasta file (sample_id_flye_polishedLR_SR_fixstart.fasta)
 * **5_quast:** QUAST quality assessment report, see [details](http://quast.sourceforge.net/docs/manual.html)
 
+
+# Troubleshooting
+
+* If encountering an OOM error on the Dorado basecalling step, restrict the `--dorado_batchsize` parameter to half of what the error message deems the maximum. [source] https://github.com/nanoporetech/dorado/issues/752
+
+* Make sure you have your system's best practices in mind when selecting the `--dorado_device` parameter.
+
+* **WARNING: Some HPC clusters like Rosalind can't run GPU processes on GPU nodes. Dorado and Guppy need GPU nodes to run. In such cases, it is recommended to separate GPU processes (Dorado or Guppy processes) from the rest of the pipeline, and run the rest of the pipeline as an Assembly-only run in non-GPU node.**
+
 # Comments
 
 The pipeline has been tested using the following grid based executors: SLURM, PBS Pro and LSF.  
@@ -433,7 +509,10 @@ The pipeline has been tested using the following grid based executors: SLURM, PB
 Do not forget to delete the /work directory created by Nextflow once the pipeline has completed.
 
 Planned upgrades:
-- Enabling GPU resource for Racon and Medaka processes.
+- More single-process unit tests (including GPU-dependent processes).
+- More pipeline tests for different input options.
+- Separate GPU processes from non-GPU processes.
+  
 
 # Citation
 
